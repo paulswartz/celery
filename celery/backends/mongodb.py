@@ -23,6 +23,8 @@ if pymongo:
 else:                                       # pragma: no cover
     Binary = None                           # noqa
 
+import json
+
 from kombu.utils import cached_property
 
 from celery import states
@@ -97,7 +99,7 @@ class MongoBackend(BaseDictBackend):
                 args.append(self.mongodb_port)
 
             self._connection = Connection(*args)
-
+            
         return self._connection
 
     def process_cleanup(self):
@@ -106,14 +108,29 @@ class MongoBackend(BaseDictBackend):
             # goes out of scope
             self._connection = None
 
+    def _mongo_encode(self, result):
+        data = self.encode(result)
+        if self.serializer == 'json':
+            # already something that Mongo can handle, so just return it as-is
+            return json.loads(data)
+        else:
+            return Binary(data)
+
+    def _mongo_decode(self, data):
+        if self.serializer == 'json':
+            return data
+        else:
+            return self.decode(data)
+
     def _store_result(self, task_id, result, status, traceback=None):
         """Store return value and status of an executed task."""
         meta = {'_id': task_id,
                 'status': status,
-                'result': Binary(self.encode(result)),
+                'result': self._mongo_encode(result),
                 'date_done': datetime.utcnow(),
-                'traceback': Binary(self.encode(traceback)),
-                'children': Binary(self.encode(self.current_task_children()))}
+                'traceback': self._mongo_encode(traceback),
+                'children': self._mongo_encode(self.current_task_children())}
+        print 'storing result: %r' % (meta,)
         self.collection.save(meta, safe=True)
 
         return result
@@ -128,10 +145,10 @@ class MongoBackend(BaseDictBackend):
         meta = {
             'task_id': obj['_id'],
             'status': obj['status'],
-            'result': self.decode(obj['result']),
+            'result': self._mongo_decode(obj['result']),
             'date_done': obj['date_done'],
-            'traceback': self.decode(obj['traceback']),
-            'children': self.decode(obj['children']),
+            'traceback': self._mongo_decode(obj['traceback']),
+            'children': self._mongo_decode(obj['children']),
         }
 
         return meta
