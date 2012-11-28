@@ -130,7 +130,6 @@ class MongoBackend(BaseDictBackend):
                 'date_done': datetime.utcnow(),
                 'traceback': self._mongo_encode(traceback),
                 'children': self._mongo_encode(self.current_task_children())}
-        print 'storing result: %r' % (meta,)
         self.collection.save(meta, safe=True)
 
         return result
